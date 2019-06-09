@@ -19,6 +19,7 @@ namespace SINBALNetwork.Network.Client
 
         // 서버와 연결할 클라이언트 소켓
         private TcpClient   _clientSocket = null;
+        NetworkStream _writeStream = null;
 
         private TexBoxForm _texBox = null;
         // 서버에서 들어온 메세지를 읽을 스트림
@@ -68,7 +69,7 @@ namespace SINBALNetwork.Network.Client
         {
             try
             {
-                NetworkStream _writeStream = _clientSocket.GetStream();
+                _writeStream = _clientSocket.GetStream();
 
                 byte[] buff = Encoding.Unicode.GetBytes(message);
                 _writeStream.Write(buff, 0, buff.Length);
@@ -110,6 +111,8 @@ namespace SINBALNetwork.Network.Client
         {
             if (_thread != null)
                 _thread.Abort();
+            if (_writeStream != null)
+                _writeStream.Close();
             if (_clientSocket != null)
                 _clientSocket.Close();
         }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Sockets;
@@ -10,13 +11,20 @@ namespace SINBALNetwork.Network.Server
 {
     public class NetWorkRoom
     {
+        // 클라이언트 정보들
         private List<ClientHandler> _clientList = null;
+        List<Task> allTasks = new List<Task>();
 
+        // 방 정보
         private string roomName = "";
 
+        // UI관련
         private Interface.TexBoxForm drawText;
 
+        // 쓰레드
         private Thread thread = null;
+
+        // Property
         public void ThreadClose() { if(thread != null) thread.Abort();  }
 
         public NetWorkRoom(string name, Interface.TexBoxForm form)
@@ -28,7 +36,7 @@ namespace SINBALNetwork.Network.Server
             // 스레드 생성 2
             if (thread == null) 
             {
-                thread = new Thread(ReadClientAll);
+                thread = new Thread(ReadClientAllAsync);
                 thread.Start();
             }
         }
@@ -40,6 +48,8 @@ namespace SINBALNetwork.Network.Server
             drawText.DrawTex(string.Format("[System] {0} join the room {1}", client.Id, roomName));
             SendClientAll(string.Format("[System] {0} 님이 {1} 방에 입장하였습니다.",
                 client.Id, roomName));
+
+            AddTesk(client);
         }
 
         // 방 안의 모든 클라이언트들에게 메세지를 보냅니다.
@@ -52,21 +62,42 @@ namespace SINBALNetwork.Network.Server
         }
 
         // 방 안의 모든 클라이언트들의 메세지를 받습니다.
-        public void ReadClientAll()
+        public async void ReadClientAllAsync()
         {
             while (true)
             {
-                for (int i = 0; i < _clientList.Count; i++)
+                if (!allTasks.Any())
+                    continue;
+                Task finished = await Task.WhenAny(allTasks);
+                
+                IEnumerator<ClientHandler> e = _clientList.GetEnumerator();
+                while(e.MoveNext())
                 {
-                    string text = _clientList[i].ReadFromClientAsync().Result;
-                    if (text != "")
+                    if (finished != e.Current.ReadWaitTask)
+                        continue;
+
+                    string text = e.Current.ReadClientBuffer();
+
+                    if (text != string.Empty)
                     {
+                        // 전체에게 메세지 전달
                         SendClientAll(text);
                         drawText.DrawTex(text);
+                        // 새로운 테스크 생성
+                        allTasks.Remove(finished);
+                        AddTesk(e.Current);
                     }
+                    else
+                        allTasks.Remove(finished);
                 }
             }
+        }
 
+        private void AddTesk(ClientHandler client)
+        {
+            Task tempTask = client.ReadFromClient();
+            if (tempTask != null)
+                allTasks.Add(tempTask);
         }
 
         public void DisconnectClient(ClientHandler client)

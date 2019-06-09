@@ -10,19 +10,29 @@ namespace SINBALNetwork.Network.Server
 {
     public class ClientHandler
     {
-        // client를 관리하는 소켓입니다.
+        // client연결 관리
         private TcpClient clntSocket = null;
+        private NetworkStream stream = null;
 
-        private object token = null;
-        public object Token { get => token; set => token = value; }
-
-        private string clientId = "";
-        public string Id { get => clientId; set => clientId = value; }
-        public TcpClient ClntSocket { get => clntSocket; set => clntSocket = value; }
-
+        // 델리게이트
         public delegate void DisconnectedHandler(ClientHandler client);
         private DisconnectedHandler onDisconnect = null;
-        private NetworkStream stream = null;
+
+        // 비동기로 클라이언트에서 읽어오기 위한 테스크
+        private Task<int> readWaitTask = null;
+
+        // 읽기 위한 버퍼
+        private byte[] buff = null;
+
+        // 클라이언트 정보
+        private object token = null;
+        private string clientId = "";
+
+        // Property
+        public string Id { get => clientId; set => clientId = value; }
+        public TcpClient ClntSocket { get => clntSocket; set => clntSocket = value; }
+        public object Token { get => token; set => token = value; }
+        public Task<int> ReadWaitTask { get => readWaitTask; set => readWaitTask = value; }
 
         public ClientHandler(TcpClient socket, object token, string id, 
             DisconnectedHandler disconnected)
@@ -53,41 +63,44 @@ namespace SINBALNetwork.Network.Server
                 return;
             }
         }
-        public async Task<string> ReadFromClientAsync()
+        public Task ReadFromClient()
         {
             try
             {
                 if (clntSocket.Connected == false)
                 {
                     ClientClose();
-                    return "";
+                    return null;
                 }
                 stream = clntSocket.GetStream();
 
-                byte[] buff = new byte[NetWorkService.BufferSize];
-                int nBuffSize = await stream.ReadAsync(buff, 0, buff.Length).ConfigureAwait(false);
-                
-                if (nBuffSize > 0)
-                {
-                    string text = Encoding.Unicode.GetString(buff, 0, nBuffSize);
-                    text        = text.Substring(0, text.Length);
-                    return text;
-                }
-                else
-                {
-                    return "";
-                }
-                
+                buff = new byte[NetWorkService.BufferSize];
+                readWaitTask = stream.ReadAsync(buff, 0, buff.Length);
+                return readWaitTask;
             }
-            catch(SocketException)
+            catch (SocketException)
             {
                 ClientClose();
-                return "";
+                return null;
             }
-            catch(Exception)
+            catch (Exception)
             {
                 ClientClose();
-                return "";
+                return null;
+            }
+        }
+
+        public string ReadClientBuffer()
+        {
+            if(readWaitTask.Result > 0)
+            {
+                string text = Encoding.Unicode.GetString(buff, 0, readWaitTask.Result);
+                return text;
+            }
+            else
+            {
+                ClientClose();
+                return string.Empty;
             }
         }
 
